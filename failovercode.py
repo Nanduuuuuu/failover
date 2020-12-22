@@ -32,7 +32,6 @@ failed = Bold + Italic + Violet
 mixGreen = Bold + Italic + Green
 initiate = Bold + Italic + Blue
 """Color-Codes"""
-# logTime = datetime.now().strftime("%Y-%m-%d.%H:%M:%S")
 logTime = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
 logLabel = [error + 'Error' + reset,
@@ -40,7 +39,8 @@ logLabel = [error + 'Error' + reset,
             success + 'Success' + reset,
             failed + 'Failed' + reset,
             initiate + 'Initiated' + reset,
-            mixBlue + 'Completed' + reset]
+            mixBlue + 'Completed' + reset,
+            Bold + Italic + White + 'Info' + reset]
 dbLabel = ['Primary', 'Failover']
 filename = 'C:\\Users\\LENOVO\\Desktop\\host.txt'
 directory = 'C:\\Users\\LENOVO\\Desktop\\'
@@ -55,218 +55,173 @@ def logger(logState, logData):
         print('logging failed, please correct your code again')
 
 
-logger(logLabel[4], mixBlue + 'Failover Code Logging Started, Version : 1.0, author:nanduu' + reset)
-
-
-def setFailover():
-    primaryDB = primary['host']
-    failoverDB = failover['host']
-    with fileinput.FileInput(filename, inplace=True, backup='') as file:
-        for line in file:
-            print(line.replace(primaryDB, failoverDB), end='')
-    return failover
-
-
-def setPrimary():
-    primaryDB = primary['host']
-    failoverDB = failover['host']
-    with fileinput.FileInput(filename, inplace=True, backup='') as file:
-        for line in file:
-            print(line.replace(failoverDB, primaryDB), end='')
-    return primary
-
-
-def writeLog(log):
-    with open(directory + 'failoverLog_{}.txt'.format(logTime), 'a') as failover_log:
-        failover_log.write(Green + logTime + reset + Red + " >>> " + reset + Yellow + log + reset + '\n')
+logger(logLabel[6], mixBlue + 'Failover Code Logging Started, Version : 1.0, author:nanduu' + reset)
 
 
 def _restartRadiusd_(label):
-    logger(logLabel[2], mixLogSpec + 'Radiusd restarted successfully with {}'.format(label) + reset)
-    """
-    restart = process.run(['systemctl', 'restart', 'radiusd-acct'], stdout=process.PIPE, stderr=process.STDOUT)
-    if restart.returncode == 0:
-        logger(logLabel[2], mixLogSpec + 'Radiusd restarted successfully with {}'.format(label) + reset)
-    else:
-        logger(logLabel[0], mixLogSpec + 'Radiusd restarted successfully with {}'.format(label) + reset)
-    """
+    logger(logLabel[6], 'Restarting radiusd with {} '.format(mixBlue + label + reset) + mixLogSpec + 'database')
 
 
 def __connect__(props, label):
     try:
-        connect = mysql.connect(**props)
-        if connect.is_connected():
-            return connect
-    except Error as __connect_err:
-        if __connect_err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
-            logger(logLabel[0], error + 'Access Denied to User "{}"@"{}" in {} database'.format(
-                props['user'], props['host'], label) + reset)
-            return 0
-        if __connect_err.errno == errorcode.CR_UNKNOWN_HOST or errorcode.ER_HOSTNAME:
-            logger(logLabel[0], error + 'Unknown host in ' + mixBlue + label + reset + error +
-                   'connection property, please correct host address')
-            return 0
-        if __connect_err.errno == errorcode.ER_UNKNOWN_TABLE:
-            logger(logLabel[0], error + 'Unknown database in {} connection property'.format(mixBlue + label + reset))
-        else:
-            return 0
+        try:
+            connect = mysql.connect(**props)
+            if connect.is_connected():
+                logger(logLabel[2],
+                       'Connected to {} '.format(mixBlue + label + reset) + mixGreen + "database successfully")
+                return connect
+        except Error as __connect_err:
+            logger(logLabel[0],
+                   error + 'Found error while connecting to {} '.format(mixBlue + label + reset)
+                   + error + "database")
+            if __connect_err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+                logger(logLabel[0], error + 'Access Denied to User "{}"@"{}" in {} database'.format(
+                    props['user'], props['host'], label) + reset)
+                return 0
+            if __connect_err.errno == errorcode.CR_UNKNOWN_HOST or errorcode.ER_HOSTNAME:
+                logger(logLabel[0], error + 'Unknown host/port in ' + mixBlue + label + reset + error +
+                       ' database connection property')
+                return 0
+            if __connect_err.errno == errorcode.ER_ATTRIBUTE_IGNORED:
+                logger(logLabel[0],
+                       error + 'Unknown database in {} connection property'.format(mixBlue + label + reset))
+            else:
+                return 0
+    except AttributeError as err:
+        pass
 
 
-def __create_table__(props, label):
+def __create__(props, label):
     _create_table_query = "create table test.test (ID int)"
     try:
-        _create_connect_ = __connect__(props, label)
-        _create_cursor_ = _create_connect_.cursor()
-        _create_cursor_.execute(_create_table_query)
-        return 1
-    except Error as createErr:
-        if createErr.errno == errorcode.ER_TABLE_EXISTS_ERROR:
-            logger(logLabel[0], Red +
-                   "Table already exists in {} ".format(mixBlue + label + reset) +
-                   Err + "database, dropping table for you")
-            return 0
+        try:
+            _create_connect_ = __connect__(props, label)
+            _create_cursor_ = _create_connect_.cursor()
+            _create_cursor_.execute(_create_table_query)
+            logger(logLabel[2],
+                   'Test table created successfully in {} '.format(mixBlue + label + reset) + mixGreen + "database")
+            return 1
+        except Error as createErr:
+            if createErr.errno == errorcode.ER_TABLE_EXISTS_ERROR:
+                logger(logLabel[0], Red +
+                       "Table already exists in {} ".format(mixBlue + label + reset) +
+                       Err + "database, dropping table automatically")
+                __drop__(props, label)
+                return 0
+            if createErr.errno == errorcode.CR_UNKNOWN_HOST or errorcode.ER_HOSTNAME:
+                logger(logLabel[0], error + 'Unknown host in ' + mixBlue + label + reset + error +
+                       ' connection property, please correct host address')
+            else:
+                return 0
+    except AttributeError as err:
+        pass
 
 
-def __write_data__(props, label):
+def __write__(props, label):
     try:
-        _write_connect_ = mysql.connect(**props)
-        _write_cursor_ = _write_connect_.cursor()
-        _write_cursor_.execute('insert into test (ID) values (1)')
-        _write_connect_.commit()
-        return 1
-    except Error as writeErr:
-        if writeErr.errno == errorcode.ER_UNKNOWN_TABLE:
-            logger(logLabel[0], 'Unknown table in {} '.format(mixBlue + label + reset) + mixGreen + "database")
-            return 0
-        else:
-            return 0
+        try:
+            _write_connect_ = mysql.connect(**props)
+            _write_cursor_ = _write_connect_.cursor()
+            _write_cursor_.execute('insert into test (ID) values (1)')
+            _write_connect_.commit()
+            logger(logLabel[2],
+                   'Data written successfully into {} '.format(mixBlue + label + reset) + mixGreen + "database")
+            return 1
+        except Error as writeErr:
+            logger(logLabel[0],
+                   error + 'Found error while writing data into {} '.format(mixBlue + label + reset)
+                   + error + "database")
+            if writeErr.errno == errorcode.ER_UNKNOWN_TABLE:
+                logger(logLabel[0], 'Unknown table in {} '.format(mixBlue + label + reset) + mixGreen + "database")
+                return 0
+            if writeErr.sqlstate == '42S02':
+                logger(logLabel[0],
+                       "Table doesn't exists in {} ".format(mixBlue + label + reset) + mixGreen +
+                       "database, write operation failed {} ".format(Err + 'EXITING CODE' + reset))
+                return 0
+            else:
+                logger(logLabel[0], 'Failed writing into database')
+                return 0
+    except AttributeError as err:
+        pass
 
 
-def __read_data__(props, label):
-    try:
-        _read_connect_ = mysql.connect(**props)
-        _read_cursor_ = _read_connect_.cursor()
-        _read_cursor_.execute("select id from test limit 1")
-        _read_result = _read_cursor_.fetchone()
-        for read in _read_result:
-            if read == 1:
-                pass
-        _read_connect_.commit()
-        return 1
-    except Error as readErr:
-        if readErr.errno == errorcode.ER_UNKNOWN_TABLE:
-            logger(logLabel[0], Red + 'Unknown table in {} '.format(mixBlue + label + reset) + mixGreen + "database")
-            return 0
-        else:
-            return 0
-
-
-def __drop_table__(props, label):
+def __drop__(props, label):
     try:
         _drop_connect_ = mysql.connect(**props)
         _drop_cursor_ = _drop_connect_.cursor()
         _drop_cursor_.execute('drop table if exists test')
         logger(logLabel[2], "Dropped test table in {} ".format(mixBlue + label + reset) + mixGreen + "database")
         return 1
-    except Error as _createErr_:
-        if _createErr_.errno == errorcode.ER_TABLE_EXISTS_ERROR:
-            logger(logLabel[0], 'Table already exists in {} '.format(mixBlue + label + reset) + mixGreen + "database")
-            return 0
-        if _createErr_.errno == errorcode.ER_UNKNOWN_TABLE:
+    except Error as _dropErr_:
+        if _dropErr_.errno == errorcode.ER_UNKNOWN_TABLE:
             logger(logLabel[0], "Table doesn't exists in {} ".format(mixBlue + label + reset) + mixGreen + "database")
             return 0
         else:
             return 0
+    except AttributeError as err:
+        pass
 
 
-def __performanceValidation__(props, label):
-    """Performance validation checks for database stability/write/read"""
+def __read__(props, label):
     try:
-        _failover_connect_ = mysql.connect(**props)
-        if _failover_connect_.is_connected():
-            logger(logLabel[2],
-                   'Connected to {} '.format(mixBlue + label + reset) + mixGreen + "database successfully")
-            if __create_table__(props, label) == 1:
-                logger(logLabel[2],
-                       'Test table created successfully in {} '.format(mixBlue + label + reset) + mixGreen + "database")
-                if __write_data__(props, label) == 1:
-                    logger(logLabel[2],
-                           'Data written successfully into {} '.format(mixBlue + label + reset) + mixGreen + "database")
-                    if __read_data__(props, label) == 1:
-                        logger(logLabel[2], mixGreen + 'Read data successfully from {} '.format(
-                            mixBlue + label + reset) + mixGreen + "database")
-                        __drop_table__(props, label)
-                        return 1
-                    else:
-                        logger(logLabel[0],
-                               error + 'Found error reading data from {} '.format(mixBlue + label + reset)
-                               + error + "database")
-                        __drop_table__(props, label)
-                else:
-                    logger(logLabel[0],
-                           error + 'Found error while writing data in  {} '.format(mixBlue + label + reset)
-                           + error + "database")
-                    __drop_table__(props, label)
-            else:
-                logger(logLabel[0],
-                       error + 'Found error while creating test table in  {} '.format(mixBlue + label + reset)
-                       + error + "database")
-                __drop_table__(props, label)
-        else:
+        try:
+            _read_connect_ = mysql.connect(**props)
+            _read_cursor_ = _read_connect_.cursor()
+            _read_cursor_.execute("select id from test limit 1")
+            _read_result = _read_cursor_.fetchone()
+            for read in _read_result:
+                if read == 1:
+                    logger(logLabel[2], 'Read data successfully from {} '.format(
+                        mixBlue + label + reset) + mixGreen + "database")
+            _read_connect_.commit()
+            return 1
+        except Error as readErr:
             logger(logLabel[0],
-                   error + 'Found error while connecting to {} '.format(mixBlue + label + reset)
+                   error + 'Found error reading data from {} '.format(mixBlue + label + reset)
                    + error + "database")
-            __drop_table__(props, label)
-    except Error as failErr:
-        if failErr.errno == errorcode.ER_ACCESS_DENIED_ERROR:
-            logger(logLabel[0], error + 'Access Denied to User "{}"@"{}" in {} database'.format(
-                props['user'], props['host'], label) + reset)
-            return 0
-        if failErr.errno == errorcode.CR_UNKNOWN_HOST or errorcode.ER_HOSTNAME:
-            logger(logLabel[0], error + 'Unknown host/port in ' + mixBlue + label + reset + error +
-                   ' database connection property, please correct host/port address')
-        if failErr.errno == errorcode.ER_UNKNOWN_TABLE:
-            logger(logLabel[0], error + 'Unknown database in {} connection property'.format(mixBlue + label + reset))
-        else:
-            __drop_table__(props, label)
-            return 0
+            if readErr.errno == errorcode.ER_UNKNOWN_TABLE:
+                logger(logLabel[0],
+                       Red + 'Unknown table in {} '.format(mixBlue + label + reset) + mixGreen + "database")
+                return 0
+            if readErr.sqlstate == '42S02':
+                logger(logLabel[0],
+                       "Table doesn't exists in {} ".format(mixBlue + label + reset) + mixGreen +
+                       "database, read operation failed {} ".format(Err + 'EXITING CODE' + reset))
+                return 0
+            else:
+                return 0
+    except AttributeError as err:
+        pass
 
 
-def doFailover():
-    """When primary database performance validation failed, primary -> failover switch"""
+def _check_(props, label):
+    logger(logLabel[4], 'Starting {} '.format(mixBlue + label + reset) + mixGreen + "database performance check")
     try:
-        if __performanceValidation__(props=primary, label='Primary') == 1:
-            logger(logLabel[2], '{} '.format(mixBlue + 'Primary' + reset) + mixGreen +
-                   "database validation completed Successfully")
-        else:
-            logger(logLabel[4], mixBlue + 'Switching into failover database' + reset)
-            setFailover()
-            if __performanceValidation__(props=failover, label='Failover') == 1:
-                logger(logLabel[2], '{} '.format(mixBlue + 'Failover' + reset) + mixGreen +
-                       "database validation completed Successfully")
-                _restartRadiusd_('Failover')
-    except RuntimeError as runtimerr:
-        logger(logLabel[2], runtimerr)
+        try:
+            if __create__(props, label) and __write__(props, label) and __read__(props, label) == 1:
+                __drop__(props, label)
+                logger(logLabel[2],
+                       '{} '.format(mixGreen + label + reset)
+                       + mixBlue + "database performance check completed successfully")
+                return 1
+            else:
+                logger(logLabel[3],
+                       error + 'Performance validation failed in {} '.format(mixBlue + label + reset)
+                       + error + "database")
+                return 0
+        except Error as checkErr:
+            if checkErr.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+                logger(logLabel[0], error + 'Access Denied to User "{}"@"{}" in {} database'.format(
+                    props['user'], props['host'], label) + reset)
+                return 0
+            else:
+                return 0
+    except AttributeError as err:
+        pass
 
 
-def reSwitch():
-    """When failover database performance validation failed, failover -> primary switch"""
-    try:
-        if __performanceValidation__(props=failover, label='Failover') == 1:
-            logger(logLabel[2], '{} '.format(mixBlue + 'Failover' + reset) + mixGreen +
-                   "database validation completed Successfully")
-        else:
-            logger(logLabel[4], mixBlue + 'Switching into primary database' + reset)
-            setPrimary()
-            if __performanceValidation__(props=primary, label='Primary') == 1:
-                logger(logLabel[2], '{} '.format(mixBlue + 'Primary' + reset) + mixGreen +
-                       "database validation completed Successfully")
-                _restartRadiusd_('Primary')
-    except RuntimeError as runtimerr:
-        logger(logLabel[2], runtimerr)
+_check_(props=primary, label='Primary')
+_check_(props=failover, label='Failover')
 
-
-doFailover()
-reSwitch()
-logger(logLabel[5], mixBlue + 'Failover Code Logging Completed' + reset)
-
+logger(logLabel[6], mixBlue + 'Failover Code Logging Completed' + reset)

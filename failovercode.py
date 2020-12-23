@@ -80,7 +80,6 @@ def setPrimary():
 
 def _restartRadiusd_(label):
     logger(logLabel[6], 'Restarting radiusd with {} '.format(mixBlue + label + reset) + mixLogSpec + 'database')
-    """
     restart = process.run(['systemctl', 'restart', 'radiusd-acct'], stdout=process.PIPE, stderr=process.STDOUT)
     if restart.returncode == 0:
         logger(logLabel[2], 'Radiusd restarted successfully with {}'
@@ -88,7 +87,6 @@ def _restartRadiusd_(label):
     else:
         logger(logLabel[0], Err + 'Radiusd failed to restart with {} '
                .format(mixBlue + label + reset) + mixGreen + "database")
-    """
 
 
 def __connect__(props, label):
@@ -115,9 +113,6 @@ def __connect__(props, label):
                 logger(logLabel[0], error + 'Unknown host/port in ' + mixBlue + label + reset + error +
                        ' database connection property')
                 return 0
-            if __connect_err.errno == errorcode.ER_ATTRIBUTE_IGNORED:
-                logger(logLabel[0],
-                       error + 'Unknown database in {} connection property'.format(mixBlue + label + reset))
             else:
                 logger(logLabel[0], 'Something went wrong!.')
                 return 0

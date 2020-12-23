@@ -41,9 +41,9 @@ logLabel = [error + 'Error' + reset,
             initiate + 'Initiated' + reset,
             mixBlue + 'Completed' + reset,
             Bold + Italic + White + 'Info' + reset]
-dbLabel = ['Primary', 'Failover']
+
 filename = 'C:\\Users\\LENOVO\\Desktop\\host.txt'
-directory = 'C:\\Users\\LENOVO\\Desktop\\'
+directory = '/'
 
 
 def logger(logState, logData):
@@ -55,11 +55,40 @@ def logger(logState, logData):
         print('logging failed, please correct your code again')
 
 
-logger(logLabel[6], mixBlue + 'Failover Code Logging Started, Version : 1.0, author:nanduu' + reset)
+logger(logLabel[6], mixBlue + 'Failover Code Logging Started, @Version : 1.0, @author:nanduu' + reset)
+
+
+def setFailover():
+    primaryDB = primary['host']
+    failoverDB = failover['host']
+    logger(logLabel[6], 'Current Primary DB : {} and Current Failover DB : {}'.format(failoverDB, primaryDB))
+    with fileinput.FileInput(filename, inplace=True, backup='') as file:
+        for line in file:
+            print(line.replace(primaryDB, failoverDB), end='')
+    return failoverDB
+
+
+def setPrimary():
+    primaryDB = primary['host']
+    failoverDB = failover['host']
+    logger(logLabel[6], 'Current Primary DB : {} and Current Failover DB : {}'.format(primaryDB, failoverDB))
+    with fileinput.FileInput(filename, inplace=True, backup='') as file:
+        for line in file:
+            print(line.replace(failoverDB, primaryDB), end='')
+    return primary
 
 
 def _restartRadiusd_(label):
     logger(logLabel[6], 'Restarting radiusd with {} '.format(mixBlue + label + reset) + mixLogSpec + 'database')
+    """
+    restart = process.run(['systemctl', 'restart', 'radiusd-acct'], stdout=process.PIPE, stderr=process.STDOUT)
+    if restart.returncode == 0:
+        logger(logLabel[2], 'Radiusd restarted successfully with {}'
+               .format(mixBlue + label + reset) + mixGreen + "database")
+    else:
+        logger(logLabel[0], Err + 'Radiusd failed to restart with {} '
+               .format(mixBlue + label + reset) + mixGreen + "database")
+    """
 
 
 def __connect__(props, label):
@@ -74,6 +103,10 @@ def __connect__(props, label):
             logger(logLabel[0],
                    error + 'Found error while connecting to {} '.format(mixBlue + label + reset)
                    + error + "database")
+            if __connect_err.sqlstate == 'HY000':
+                logger(logLabel[0], error + 'Unknown host "{}"'.format(
+                    props['host'], label) + reset)
+                return 0
             if __connect_err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
                 logger(logLabel[0], error + 'Access Denied to User "{}"@"{}" in {} database'.format(
                     props['user'], props['host'], label) + reset)
@@ -86,6 +119,7 @@ def __connect__(props, label):
                 logger(logLabel[0],
                        error + 'Unknown database in {} connection property'.format(mixBlue + label + reset))
             else:
+                logger(logLabel[0], 'Something went wrong!.')
                 return 0
     except AttributeError as err:
         pass
@@ -112,6 +146,7 @@ def __create__(props, label):
                 logger(logLabel[0], error + 'Unknown host in ' + mixBlue + label + reset + error +
                        ' connection property, please correct host address')
             else:
+                logger(logLabel[0], 'Something went wrong!.')
                 return 0
     except AttributeError as err:
         pass
@@ -136,7 +171,12 @@ def __write__(props, label):
                 return 0
             if writeErr.sqlstate == '42S02':
                 logger(logLabel[0],
-                       "Table doesn't exists in {} ".format(mixBlue + label + reset) + mixGreen +
+                       error + "Table doesn't exists in {} ".format(mixBlue + label + reset) + mixGreen +
+                       "database, write operation failed {} ".format(Err + 'EXITING CODE' + reset))
+                return 0
+            if writeErr.sqlstate == '42000':
+                logger(logLabel[0],
+                       error + "Found SQL Syntax error in {} ".format(mixBlue + label + reset) + error +
                        "database, write operation failed {} ".format(Err + 'EXITING CODE' + reset))
                 return 0
             else:
@@ -158,6 +198,7 @@ def __drop__(props, label):
             logger(logLabel[0], "Table doesn't exists in {} ".format(mixBlue + label + reset) + mixGreen + "database")
             return 0
         else:
+            logger(logLabel[0], 'Something went wrong -> drop module!.')
             return 0
     except AttributeError as err:
         pass
@@ -190,6 +231,7 @@ def __read__(props, label):
                        "database, read operation failed {} ".format(Err + 'EXITING CODE' + reset))
                 return 0
             else:
+                logger(logLabel[0], 'Something went wrong -> Read Module!.')
                 return 0
     except AttributeError as err:
         pass
@@ -207,21 +249,34 @@ def _check_(props, label):
                 return 1
             else:
                 logger(logLabel[3],
-                       error + 'Performance validation failed in {} '.format(mixBlue + label + reset)
+                       error + 'Performance check failed in {} '.format(mixBlue + label + reset)
                        + error + "database")
                 return 0
         except Error as checkErr:
-            if checkErr.errno == errorcode.ER_ACCESS_DENIED_ERROR:
-                logger(logLabel[0], error + 'Access Denied to User "{}"@"{}" in {} database'.format(
-                    props['user'], props['host'], label) + reset)
-                return 0
-            else:
-                return 0
+            logger(logLabel[0], 'Something went wrong -> Check Module!.')
+            return 0
     except AttributeError as err:
         pass
 
 
-_check_(props=primary, label='Primary')
-_check_(props=failover, label='Failover')
+def _switch_sequence_():
+    """primary -> failover switching"""
+    if _check_(props=primary, label='Primary') == 1:
+        logger(logLabel[2],
+               '{} '.format(mixBlue + 'Primary' + reset) + mixGreen
+               + 'database is good shape, no need to switch' + reset)
+        return 1
+    else:
+        if _check_(props=failover, label='Failover') == 1:
+            logger(logLabel[2],
+                   '{} '.format(mixBlue + 'Failover' + reset) + mixGreen
+                   + 'database is in switchable state, initiating primary -> failover switching' + reset)
+            setFailover()
+            _restartRadiusd_('Failover')
+        else:
+            logger(logLabel[0],
+                   '{}'.format(Err + 'You are completely screwed both databases are unavailable' + reset))
 
+
+_switch_sequence_()
 logger(logLabel[6], mixBlue + 'Failover Code Logging Completed' + reset)
